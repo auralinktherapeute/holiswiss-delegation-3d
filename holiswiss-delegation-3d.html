@@ -107,6 +107,11 @@ canvas:active{cursor:grabbing}
 /* ── Hint ── */
 #hint{position:fixed;bottom:14px;right:14px;font-size:10px;color:var(--text3);text-align:right;line-height:1.9;pointer-events:none}
 
+/* ── Rotation toggle ── */
+#rotate-toggle{position:fixed;bottom:18px;left:130px;z-index:30;background:rgba(7,20,40,.92);border:1px solid var(--border-a);border-radius:11px;padding:8px 15px;color:var(--accent-l);font-size:11px;cursor:pointer;backdrop-filter:blur(12px);transition:all .25s;letter-spacing:.5px;font-weight:600}
+#rotate-toggle:hover{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 4px 18px var(--glow)}
+#rotate-toggle.active{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 0 18px var(--glow),0 0 40px rgba(6,182,212,.2)}
+
 /* ── Admin toggle ── */
 #admin-toggle{position:fixed;bottom:18px;left:18px;z-index:30;background:rgba(7,20,40,.92);border:1px solid var(--border-a);border-radius:11px;padding:8px 15px;color:var(--accent-l);font-size:11px;cursor:pointer;backdrop-filter:blur(12px);transition:all .25s;letter-spacing:.5px;font-weight:600}
 #admin-toggle:hover{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 4px 18px var(--glow)}
@@ -216,6 +221,9 @@ canvas:active{cursor:grabbing}
   Scroll — zoom · Glisser — tourner<br>
   Shift+glisser — déplacer
 </div>
+
+<!-- Rotation toggle -->
+<button id="rotate-toggle">↻ Rotation</button>
 
 <!-- Admin toggle -->
 <button id="admin-toggle">⚙ Analyse</button>
@@ -880,10 +888,121 @@ window.addEventListener('resize',()=>{
 //  ANIMATION LOOP
 // ═══════════════════════════════════════════════════════
 
+// ── Auto-rotation ──
+let autoRotate = false;
+document.getElementById('rotate-toggle').onclick = ()=>{
+  autoRotate = !autoRotate;
+  document.getElementById('rotate-toggle').classList.toggle('active', autoRotate);
+};
+
+// ── Pulse particles along edges ──
+const pulsePool = [];
+const MAX_PULSES = 28;
+
+const pulseGeo = new THREE.SphereGeometry(.9, 8, 6);
+
+function spawnPulse(){
+  if(pulsePool.length >= MAX_PULSES) return;
+  const idx = Math.floor(Math.random()*EDGES.length);
+  const [a,b] = EDGES[idx];
+  const comA = nodeById[a].community;
+  const color = new THREE.Color(COM_COLOR[comA]);
+  const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:.0});
+  const mesh = new THREE.Mesh(pulseGeo, mat);
+  mesh.position.copy(nodeMeshes[a].position);
+  scene.add(mesh);
+
+  // Trail: 3 smaller spheres behind the pulse
+  const trail = [];
+  for(let t=0;t<3;t++){
+    const tGeo = new THREE.SphereGeometry(.5-t*.12, 6, 5);
+    const tMat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:.0});
+    const tMesh = new THREE.Mesh(tGeo, tMat);
+    scene.add(tMesh);
+    trail.push(tMesh);
+  }
+
+  pulsePool.push({ mesh, trail, a, b, t:0, speed: .008 + Math.random()*.006 });
+}
+
+// Spawn pulses periodically
+let spawnTimer = 0;
+
+function updatePulses(){
+  spawnTimer++;
+  if(spawnTimer % 18 === 0) spawnPulse();
+
+  for(let i=pulsePool.length-1;i>=0;i--){
+    const p = pulsePool[i];
+    p.t += p.speed;
+
+    const posA = nodeMeshes[p.a].position;
+    const posB = nodeMeshes[p.b].position;
+
+    // Main pulse position
+    p.mesh.position.lerpVectors(posA, posB, Math.min(p.t,1));
+    const fade = p.t < .15 ? p.t/.15 : p.t > .85 ? (1-p.t)/.15 : 1;
+    p.mesh.material.opacity = fade * .95;
+
+    // Trail positions (slightly behind)
+    p.trail.forEach((tm, ti)=>{
+      const tt = Math.max(0, p.t - (ti+1)*.06);
+      tm.position.lerpVectors(posA, posB, Math.min(tt,1));
+      tm.material.opacity = fade * (.55 - ti*.15);
+    });
+
+    // Pulse done → remove
+    if(p.t >= 1){
+      scene.remove(p.mesh);
+      p.trail.forEach(tm=>scene.remove(tm));
+      pulsePool.splice(i,1);
+    }
+  }
+}
+
+// ── Domain ring pulse (periodic glow on community hubs) ──
+const ringPulses = [];
+let ringTimer = 0;
+
+function spawnRingPulse(){
+  const comId = Math.floor(Math.random()*COMMUNITIES.length);
+  const hubNode = [...NODES].filter(n=>n.community===comId).sort((a,b)=>degreeMap[b.id]-degreeMap[a.id])[0];
+  if(!hubNode) return;
+  const color = new THREE.Color(COM_COLOR[comId]);
+  const geo = new THREE.RingGeometry(4, 5.5, 32);
+  const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:.7, side:THREE.DoubleSide});
+  const ring = new THREE.Mesh(geo, mat);
+  ring.position.copy(nodeMeshes[hubNode.id].position);
+  ring.lookAt(camera.position);
+  scene.add(ring);
+  ringPulses.push({ring, t:0, node:hubNode.id});
+}
+
+function updateRings(){
+  ringTimer++;
+  if(ringTimer % 55 === 0) spawnRingPulse();
+  for(let i=ringPulses.length-1;i>=0;i--){
+    const rp = ringPulses[i];
+    rp.t += .03;
+    const s = 1 + rp.t*2.2;
+    rp.ring.scale.set(s,s,s);
+    rp.ring.material.opacity = Math.max(0, .7*(1-rp.t));
+    rp.ring.position.copy(nodeMeshes[rp.node].position);
+    rp.ring.lookAt(camera.position);
+    if(rp.t >= 1){ scene.remove(rp.ring); ringPulses.splice(i,1); }
+  }
+}
+
 let time=0;
 function animate(){
   requestAnimationFrame(animate);
   time+=.008;
+
+  // Auto-rotation
+  if(autoRotate && !isDragging){
+    camTheta += .003;
+    updateCamera();
+  }
 
   // Gentle bob on nodes
   NODES.forEach(n=>{
@@ -894,6 +1013,12 @@ function animate(){
       labelSprites[n.id].position.y = m.position.y + (2.5+Math.sqrt(degreeMap[n.id])*1.4)+5;
     }
   });
+
+  // Pulse particles
+  updatePulses();
+
+  // Ring pulses on hubs
+  updateRings();
 
   // Update edge endpoints
   edgeLines.forEach(({line,a,b})=>{
