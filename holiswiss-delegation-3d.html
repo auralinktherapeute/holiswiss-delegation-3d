@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HoliSwiss — Architecture & Délégation 3D</title>
+<style>
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:          #040d1a;
+  --bg2:         #071428;
+  --bg3:         #0d2040;
+  --accent:      #2563eb;
+  --accent-l:    #60a5fa;
+  --cyan:        #06b6d4;
+  --text:        #ffffff;
+  --text2:       rgba(255,255,255,.72);
+  --text3:       rgba(255,255,255,.4);
+  --border:      rgba(96,165,250,.2);
+  --border-a:    rgba(96,165,250,.5);
+  --pill:        rgba(255,255,255,.07);
+  --glow:        rgba(37,99,235,.5);
+  --glow2:       rgba(6,182,212,.35);
+  --success:     #06b6d4;
+  --warn:        #f59e0b;
+  --err:         #ef4444;
+}
+body{background:var(--bg);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;color:var(--text)}
+canvas{display:block;width:100vw;height:100vh;cursor:grab}
+canvas:active{cursor:grabbing}
+
+/* ── Loader ── */
+#loader{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity .9s ease}
+#loader.hidden{opacity:0;pointer-events:none}
+.ld-logo{font-size:30px;font-weight:800;background:linear-gradient(135deg,var(--accent-l),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;letter-spacing:-.5px}
+.ld-sub{font-size:11px;color:var(--text3);margin-bottom:28px;letter-spacing:2px;text-transform:uppercase}
+.ld-ring{width:56px;height:56px;border-radius:50%;border:2px solid var(--accent-l);margin-bottom:28px;position:relative;animation:spin 2s linear infinite}
+.ld-ring::before{content:'';position:absolute;inset:6px;border-radius:50%;border:1px solid var(--cyan);animation:spin 1.5s linear infinite reverse}
+.ld-ring::after{content:'';position:absolute;inset:15px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--cyan));box-shadow:0 0 18px var(--accent)}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.ld-bar-wrap{width:280px;height:2px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden}
+.ld-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent-l),var(--cyan));border-radius:2px;transition:width .3s ease}
+.ld-msg{margin-top:14px;font-size:11px;color:var(--text3);letter-spacing:1px}
+
+/* ── Header ── */
+#header{position:fixed;top:0;left:0;right:0;padding:13px 22px;background:linear-gradient(180deg,rgba(4,13,26,.97) 0%,transparent 100%);display:flex;align-items:center;justify-content:space-between;z-index:20;pointer-events:none}
+#title{font-size:17px;font-weight:800;background:linear-gradient(90deg,var(--accent-l),var(--cyan),var(--accent-l));background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 5s linear infinite;letter-spacing:-.3px}
+@keyframes shimmer{0%{background-position:0%}100%{background-position:200%}}
+#stats{display:flex;gap:24px}
+.stat{text-align:center}
+.stat-val{display:block;font-size:20px;font-weight:700;background:linear-gradient(135deg,var(--accent-l),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;margin-top:1px}
+
+/* ── Panels ── */
+#panel-left{position:fixed;top:66px;left:13px;width:218px;z-index:20;display:flex;flex-direction:column;gap:9px}
+#panel-right{position:fixed;top:66px;right:13px;width:256px;z-index:20}
+
+.card{background:rgba(7,20,40,.9);border:1px solid var(--border);border-radius:16px;padding:13px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 8px 28px rgba(37,99,235,.1),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s}
+.card:hover{border-color:var(--border-a)}
+.card-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--accent-l);margin-bottom:9px;opacity:.8}
+
+/* ── Search ── */
+#search-input{width:100%;padding:8px 12px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:12px;outline:none;transition:all .2s}
+#search-input:focus{border-color:var(--accent-l);box-shadow:0 0 0 3px rgba(96,165,250,.13),0 0 14px rgba(96,165,250,.08)}
+#search-input::placeholder{color:var(--text3)}
+#search-results{margin-top:5px;max-height:120px;overflow-y:auto}
+.sr-item{padding:5px 9px;font-size:11px;cursor:pointer;border-radius:7px;color:var(--text2);border-left:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:5px}
+.sr-item:hover{background:rgba(96,165,250,.1);border-left-color:var(--accent-l)}
+.sr-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+
+/* ── Filter buttons ── */
+.filter-row{display:flex;gap:5px;flex-wrap:wrap}
+.fbtn{flex:1;min-width:60px;padding:6px 4px;border-radius:7px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);font-size:10px;cursor:pointer;transition:all .2s;text-align:center;letter-spacing:.2px}
+.fbtn:hover,.fbtn.on{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 2px 12px var(--glow)}
+
+.abtn{width:100%;margin-top:7px;padding:8px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text2);font-size:11px;cursor:pointer;transition:all .2s;text-align:center}
+.abtn:hover,.abtn.on{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 2px 12px var(--glow)}
+
+/* ── Legend ── */
+#legend-list{max-height:200px;overflow-y:auto}
+.leg-item{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:8px;cursor:pointer;transition:all .15s;font-size:11px;color:var(--text2)}
+.leg-item:hover{background:rgba(96,165,250,.08)}
+.leg-item.dimmed{opacity:.2}
+.leg-item.active-com{background:rgba(96,165,250,.12);color:var(--text)}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 5px currentColor}
+.leg-cnt{margin-left:auto;font-size:9px;color:var(--text3)}
+
+/* ── Inspect panel ── */
+#inspect{display:none;max-height:72vh;overflow-y:auto;animation:fadein .2s ease}
+#inspect.show{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+#inspect-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:5px;word-break:break-all;line-height:1.4}
+#inspect-comm{font-size:11px;margin-bottom:9px;color:var(--text2)}
+.badge{display:inline-block;padding:2px 10px;border-radius:18px;background:rgba(96,165,250,.12);border:1px solid var(--border-a);color:var(--accent-l);font-size:11px}
+#nb-title{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin:12px 0 7px}
+.nb-item{padding:5px 9px;background:rgba(255,255,255,.03);border-radius:7px;font-size:11px;color:var(--text2);cursor:pointer;border-left:2px solid transparent;margin-bottom:2px;transition:all .15s}
+.nb-item:hover{background:rgba(96,165,250,.08);color:var(--text)}
+#inspect-close{float:right;background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;margin-top:-2px;transition:color .15s}
+#inspect-close:hover{color:var(--err)}
+.inspect-meta{font-size:10px;color:var(--text3);margin-top:4px;line-height:1.7}
+.inspect-meta span{color:var(--accent-l)}
+
+/* ── Tooltip ── */
+#tooltip{position:fixed;pointer-events:none;background:rgba(4,13,26,.96);border:1px solid var(--border-a);border-radius:11px;padding:8px 12px;font-size:11px;color:var(--text);box-shadow:0 4px 22px rgba(37,99,235,.25);display:none;z-index:50;max-width:220px;line-height:1.55}
+
+/* ── Hint ── */
+#hint{position:fixed;bottom:14px;right:14px;font-size:10px;color:var(--text3);text-align:right;line-height:1.9;pointer-events:none}
+
+/* ── Admin toggle ── */
+#admin-toggle{position:fixed;bottom:18px;left:18px;z-index:30;background:rgba(7,20,40,.92);border:1px solid var(--border-a);border-radius:11px;padding:8px 15px;color:var(--accent-l);font-size:11px;cursor:pointer;backdrop-filter:blur(12px);transition:all .25s;letter-spacing:.5px;font-weight:600}
+#admin-toggle:hover{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 4px 18px var(--glow)}
+#admin-toggle.active{background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;border-color:transparent;box-shadow:0 0 18px var(--glow)}
+
+/* ── Admin panel ── */
+#admin-panel{position:fixed;top:0;right:0;bottom:0;width:330px;z-index:40;background:rgba(4,13,26,.97);border-left:1px solid var(--border-a);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transform:translateX(110%);transition:transform .4s cubic-bezier(.25,.46,.45,.94);overflow-y:auto;display:flex;flex-direction:column}
+#admin-panel.open{transform:translateX(0)}
+#admin-panel::-webkit-scrollbar{width:3px}
+#admin-panel::-webkit-scrollbar-thumb{background:var(--border-a);border-radius:2px}
+
+.ap-header{padding:20px 18px 13px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(37,99,235,.08) 0%,transparent 100%);flex-shrink:0}
+.ap-header h2{font-size:14px;font-weight:700;background:linear-gradient(135deg,var(--accent-l),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.ap-header p{font-size:11px;color:var(--text3);margin-top:3px}
+.ap-close{float:right;background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;transition:color .15s;margin-top:-2px}
+.ap-close:hover{color:var(--err)}
+.ap-section{padding:14px 18px;border-bottom:1px solid rgba(96,165,250,.07)}
+.ap-section h3{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--accent-l);margin-bottom:11px;opacity:.8}
+
+/* Admin login */
+#admin-login{padding:38px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;flex:1}
+#admin-login h3{font-size:14px;font-weight:700;color:var(--text);text-align:center}
+#admin-login p{font-size:11px;color:var(--text3);text-align:center}
+#admin-pwd{width:100%;padding:9px 13px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:14px;outline:none;text-align:center;letter-spacing:3px;transition:all .2s}
+#admin-pwd:focus{border-color:var(--accent-l);box-shadow:0 0 0 3px rgba(96,165,250,.13)}
+#admin-login-btn{width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,var(--accent),var(--cyan));color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+#admin-login-btn:hover{box-shadow:0 4px 18px var(--glow);transform:translateY(-1px)}
+.login-err{color:var(--err);font-size:11px;display:none}
+#admin-content{display:none;flex-direction:column}
+#admin-content.show{display:flex}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px}
+.stat-box{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;padding:9px;text-align:center}
+.stat-box-val{font-size:16px;font-weight:700;background:linear-gradient(135deg,var(--accent-l),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-box-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+.hub-list{display:flex;flex-direction:column;gap:3px}
+.hub-item{display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:7px;font-size:11px;cursor:pointer;border:1px solid transparent;transition:all .15s}
+.hub-item:hover{background:rgba(96,165,250,.08);border-color:var(--border)}
+.hub-rank{font-size:9px;color:var(--text3);width:14px;flex-shrink:0}
+.hub-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.hub-name{flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-deg{font-size:10px;color:var(--accent-l);font-weight:600}
+.ap-btn{width:100%;padding:8px 13px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text2);font-size:11px;cursor:pointer;transition:all .2s;text-align:left;margin-bottom:5px;display:flex;align-items:center;gap:7px}
+.ap-btn:hover{background:rgba(96,165,250,.1);border-color:var(--border-a);color:var(--text)}
+.ap-note{font-size:10px;color:var(--text3);line-height:1.7;padding:10px 13px;background:rgba(96,165,250,.04);border-radius:8px;border-left:2px solid var(--accent-l)}
+
+</style>
+</head>
+<body>
+
+<!-- Loader -->
+<div id="loader">
+  <div class="ld-ring"></div>
+  <div class="ld-logo">HoliSwiss</div>
+  <div class="ld-sub">Architecture · Délégation · 3D</div>
+  <div class="ld-bar-wrap"><div class="ld-bar" id="ld-bar"></div></div>
+  <div class="ld-msg" id="ld-msg">Initialisation du graphe...</div>
+</div>
+
+<!-- Header -->
+<div id="header">
+  <div id="title">HoliSwiss — Carte de Délégation 3D</div>
+  <div id="stats">
+    <div class="stat"><span class="stat-val" id="st-nodes">0</span><span class="stat-lbl">Nœuds</span></div>
+    <div class="stat"><span class="stat-val" id="st-edges">0</span><span class="stat-lbl">Liens</span></div>
+    <div class="stat"><span class="stat-val" id="st-coms">0</span><span class="stat-lbl">Domaines</span></div>
+  </div>
+</div>
+
+<!-- Panel gauche -->
+<div id="panel-left">
+  <div class="card">
+    <div class="card-title">Recherche</div>
+    <input id="search-input" type="text" placeholder="Rechercher un nœud...">
+    <div id="search-results"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Filtrer par domaine</div>
+    <div class="filter-row" id="filter-row"></div>
+    <button class="abtn" id="filter-all-btn">Tout afficher</button>
+  </div>
+  <div class="card">
+    <div class="card-title">Légende</div>
+    <div id="legend-list"></div>
+  </div>
+</div>
+
+<!-- Panel droit — inspect -->
+<div id="panel-right">
+  <div class="card" id="inspect-card" style="display:none">
+    <div id="inspect">
+      <button id="inspect-close">×</button>
+      <div id="inspect-name"></div>
+      <div id="inspect-comm"></div>
+      <div id="inspect-meta-block" class="inspect-meta"></div>
+      <div id="nb-title">Connecté à</div>
+      <div id="nb-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- Hint -->
+<div id="hint">
+  Clic — inspecter · Double-clic — centrer<br>
+  Scroll — zoom · Glisser — tourner<br>
+  Shift+glisser — déplacer
+</div>
+
+<!-- Admin toggle -->
+<button id="admin-toggle">⚙ Analyse</button>
+
+<!-- Admin panel -->
+<div id="admin-panel">
+  <div class="ap-header">
+    <button class="ap-close" id="ap-close-btn">×</button>
+    <h2>Panneau d'analyse</h2>
+    <p>Statistiques et navigation du graphe</p>
+  </div>
+  <div id="admin-login">
+    <h3>Accès Analyse</h3>
+    <p>Entrez le code d'accès pour voir les statistiques détaillées</p>
+    <input type="password" id="admin-pwd" placeholder="••••••">
+    <button id="admin-login-btn">Accéder</button>
+    <span class="login-err" id="login-err">Code incorrect</span>
+  </div>
+  <div id="admin-content">
+    <div class="ap-section">
+      <h3>Vue d'ensemble</h3>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-box-val" id="ap-nodes">—</div><div class="stat-box-lbl">Nœuds</div></div>
+        <div class="stat-box"><div class="stat-box-val" id="ap-edges">—</div><div class="stat-box-lbl">Liens</div></div>
+        <div class="stat-box"><div class="stat-box-val" id="ap-coms">—</div><div class="stat-box-lbl">Domaines</div></div>
+        <div class="stat-box"><div class="stat-box-val" id="ap-density">—</div><div class="stat-box-lbl">Densité</div></div>
+      </div>
+    </div>
+    <div class="ap-section">
+      <h3>Hubs principaux</h3>
+      <div class="hub-list" id="hub-list"></div>
+    </div>
+    <div class="ap-section">
+      <h3>Actions</h3>
+      <button class="ap-btn" onclick="resetCamera()">↺ Réinitialiser la vue</button>
+      <button class="ap-btn" onclick="toggleLabels()">🏷 Afficher / masquer labels</button>
+      <button class="ap-btn" onclick="explodeGraph()">💥 Exploser le graphe</button>
+      <button class="ap-btn" onclick="resetSimulation()">⚡ Relancer simulation</button>
+    </div>
+    <div class="ap-section">
+      <div class="ap-note">
+        Ce graphe représente l'architecture complète de HoliSwiss.ch —
+        nœuds = composants, arêtes = dépendances et flux de données.
+        Mise à jour : 10 juin 2026.
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+//  DONNÉES — NŒUDS ET ARÊTES
+// ═══════════════════════════════════════════════════════
+
+const COMMUNITIES = [
+  { id:0, name:'Orchestration',  color:'#60a5fa', desc:'Gérald + outils de pilotage' },
+  { id:1, name:'Frontend',       color:'#a78bfa', desc:'TanStack Start + routes React' },
+  { id:2, name:'Agents IA',      color:'#fbbf24', desc:'Agents Python + Claude Haiku' },
+  { id:3, name:'Supabase',       color:'#34d399', desc:'Base de données + Edge Functions' },
+  { id:4, name:'Intégrations',   color:'#f472b6', desc:'APIs tierces' },
+  { id:5, name:'Blog & SEO',     color:'#fb923c', desc:'Articles GEO + SEO' },
+  { id:6, name:'DevOps',         color:'#94a3b8', desc:'Déploiement + infrastructure' },
+];
+
+const NODES = [
+  // 0 — Orchestration
+  {id:'gerald',           label:'Gérald Henry',          community:0, desc:'Orchestrateur · fondateur HoliSwiss',         role:'Humain',     status:'actif',   degree:14},
+  {id:'claude-code',      label:'Claude Code',           community:0, desc:'CLI IA · génération code + agents',           role:'Outil IA',   status:'actif',   degree:8},
+  {id:'github',           label:'GitHub repo',           community:0, desc:'auralinktherapeute/holi-swiss-magic',         role:'VCS',        status:'actif',   degree:7},
+  {id:'supabase-dash',    label:'Supabase Dashboard',    community:0, desc:'Interface admin base de données',             role:'Interface',  status:'actif',   degree:5},
+
+  // 1 — Frontend
+  {id:'tanstack',         label:'TanStack Start',        community:1, desc:'Framework SSR React/TypeScript · 2026',       role:'Framework',  status:'actif',   degree:9},
+  {id:'route-blog',       label:'$lang.blog.index',      community:1, desc:'Route listing articles · fallback FR',        role:'Route',      status:'actif',   degree:5},
+  {id:'route-slug',       label:'$lang.blog.$slug',      community:1, desc:'Route article détail · badge langue',         role:'Route',      status:'actif',   degree:4},
+  {id:'route-admin',      label:'admin.articles',        community:1, desc:'Éditeur admin articles + Unsplash picker',    role:'Route',      status:'actif',   degree:5},
+  {id:'holiswiss-client', label:'holiswiss-public.ts',   community:1, desc:'Client Supabase hardcodé → gpldaaqw...',      role:'Client',     status:'actif',   degree:6},
+  {id:'articles-fn',      label:'articles.functions.ts', community:1, desc:'Server functions TanStack · lecture articles',role:'Fonctions',  status:'actif',   degree:5},
+  {id:'lovable-build',    label:'Lovable (build)',        community:1, desc:'Plateforme build + CDN · click Publish',      role:'Build',      status:'actif',   degree:6},
+
+  // 2 — Agents IA
+  {id:'agent-main',       label:'Agent Articles GEO',    community:2, desc:'Orchestrateur 4 sous-agents · Python',        role:'Agent',      status:'actif',   degree:10},
+  {id:'run-articles',     label:'run_articles.py',       community:2, desc:'Lanceur · config clés API + paramètres',      role:'Config',     status:'actif',   degree:6},
+  {id:'agent-analyste',   label:'Agent Analyste',        community:2, desc:'Sélection sujets · anti-doublons Supabase',   role:'Sous-agent', status:'actif',   degree:5},
+  {id:'agent-redacteur',  label:'Agent Rédacteur',       community:2, desc:'Génère Markdown FR 900-1200 mots',            role:'Sous-agent', status:'actif',   degree:5},
+  {id:'agent-seo',        label:'Agent SEO',             community:2, desc:'Titre 50-60ch · meta 155ch · slug · mots-clés',role:'Sous-agent',status:'actif',   degree:4},
+  {id:'agent-geo',        label:'Agent GEO',             community:2, desc:'Citabilité IA · FAQ · entités suisses',       role:'Sous-agent', status:'actif',   degree:4},
+  {id:'rapport-html',     label:'Rapport HTML',          community:2, desc:'rapport_articles_holiswiss.html post-run',    role:'Output',     status:'actif',   degree:3},
+
+  // 3 — Supabase
+  {id:'supabase-db',      label:'Supabase DB',           community:3, desc:'PostgreSQL · projet gpldaaqwvwopttachrma',    role:'Database',   status:'actif',   degree:11},
+  {id:'table-articles',   label:'articles_blog',         community:3, desc:'Table articles · content_status enum · multi-langue', role:'Table', status:'actif', degree:7},
+  {id:'table-therapeutes',label:'therapeutes',           community:3, desc:'Table principale · statut pending/approved',  role:'Table',      status:'actif',   degree:5},
+  {id:'rls',              label:'RLS Policies',          community:3, desc:'Row Level Security · anon=lecture seule',     role:'Sécurité',   status:'actif',   degree:4},
+  {id:'edge-fn',          label:'Edge Functions',        community:3, desc:'Deno · 11 fonctions (modération, email...)',  role:'Serverless', status:'actif',   degree:5},
+
+  // 4 — Intégrations
+  {id:'anthropic',        label:'Anthropic Claude',      community:4, desc:'claude-haiku-4-5-20251001 · HTTP direct',     role:'API IA',     status:'actif',   degree:5},
+  {id:'unsplash',         label:'Unsplash API',          community:4, desc:'Photos couverture · download trigger obligatoire', role:'API Media', status:'actif', degree:4},
+  {id:'stripe',           label:'Stripe',                community:4, desc:'Paiements premium · à intégrer',              role:'Paiement',   status:'à faire', degree:2},
+  {id:'calendly',         label:'Calendly',              community:4, desc:'Prise de RDV · webhook à connecter',          role:'RDV',        status:'partiel', degree:2},
+  {id:'netlify',          label:'Netlify',               community:4, desc:'Hébergement holiswiss.ch · CDN global',       role:'Hosting',    status:'actif',   degree:3},
+
+  // 5 — Blog & SEO
+  {id:'article-sophro',   label:'Sophrologie Suisse',    community:5, desc:'1er article publié · 10/06/2026',             role:'Article',    status:'publié',  degree:3},
+  {id:'article-naturo',   label:'Naturopathie Suisse',   community:5, desc:'2e article · photo Unsplash ✅',               role:'Article',    status:'publié',  degree:3},
+  {id:'article-acupunc',  label:'Acupuncture Genève',    community:5, desc:'3e article · 3/3 run initial',                role:'Article',    status:'publié',  degree:3},
+  {id:'template-geo',     label:'Template GEO',          community:5, desc:'Structure type FAQ + entités suisses',        role:'Template',   status:'actif',   degree:3},
+  {id:'strategie-geo',    label:'Stratégie GEO-SEO',     community:5, desc:'18 sujets cibles · multilangue FR/DE/IT/EN',  role:'Stratégie',  status:'actif',   degree:4},
+  {id:'obsidian',         label:'Vault Obsidian',        community:5, desc:'15 notes · Mermaid · wikilinks · HoliSwiss/', role:'Doc',        status:'actif',   degree:4},
+
+  // 6 — DevOps
+  {id:'env-file',         label:'.env',                  community:6, desc:'VITE_SUPABASE_URL=gpldaaqw... versionné',     role:'Config',     status:'actif',   degree:4},
+  {id:'config-toml',      label:'supabase/config.toml',  community:6, desc:'project_id = gpldaaqwvwopttachrma',           role:'Config',     status:'actif',   degree:3},
+  {id:'github-actions',   label:'GitHub Actions',        community:6, desc:'CI/CD · cron GEO hebdo à déployer',           role:'CI/CD',      status:'à faire', degree:2},
+];
+
+const EDGES = [
+  // Gérald pilote tout
+  ['gerald','claude-code'], ['gerald','github'], ['gerald','supabase-dash'], ['gerald','run-articles'],
+  ['gerald','agent-main'], ['gerald','obsidian'], ['gerald','route-admin'],
+
+  // Claude Code génère
+  ['claude-code','tanstack'], ['claude-code','agent-main'], ['claude-code','holiswiss-client'],
+
+  // GitHub → Lovable → Netlify
+  ['github','lovable-build'], ['lovable-build','netlify'], ['lovable-build','tanstack'],
+
+  // Frontend
+  ['tanstack','route-blog'], ['tanstack','route-slug'], ['tanstack','route-admin'],
+  ['tanstack','articles-fn'], ['tanstack','holiswiss-client'],
+  ['holiswiss-client','supabase-db'],
+  ['articles-fn','holiswiss-client'],
+  ['route-blog','articles-fn'], ['route-slug','articles-fn'],
+  ['route-admin','unsplash'], ['route-admin','articles-fn'],
+
+  // Agent pipeline
+  ['run-articles','agent-main'],
+  ['agent-main','agent-analyste'], ['agent-main','agent-redacteur'],
+  ['agent-main','agent-seo'], ['agent-main','agent-geo'],
+  ['agent-main','rapport-html'],
+  ['agent-analyste','supabase-db'], ['agent-analyste','strategie-geo'],
+  ['agent-redacteur','anthropic'], ['agent-seo','anthropic'], ['agent-geo','anthropic'],
+  ['agent-geo','unsplash'],
+  ['agent-main','table-articles'],
+
+  // Supabase
+  ['supabase-db','table-articles'], ['supabase-db','table-therapeutes'],
+  ['supabase-db','rls'], ['supabase-db','edge-fn'],
+  ['supabase-dash','supabase-db'],
+
+  // Articles → blog
+  ['table-articles','article-sophro'], ['table-articles','article-naturo'], ['table-articles','article-acupunc'],
+  ['template-geo','agent-redacteur'], ['strategie-geo','agent-analyste'],
+
+  // DevOps
+  ['env-file','holiswiss-client'], ['config-toml','supabase-db'],
+  ['github','github-actions'], ['github-actions','netlify'],
+
+  // Intégrations
+  ['netlify','env-file'], ['stripe','table-therapeutes'], ['calendly','table-therapeutes'],
+  ['edge-fn','anthropic'],
+];
+
+// ═══════════════════════════════════════════════════════
+//  THREE.JS — SETUP
+// ═══════════════════════════════════════════════════════
+
+const canvas = document.getElementById('c');
+const W = ()=>window.innerWidth, H = ()=>window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W(), H());
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, W()/H(), 0.1, 2000);
+camera.position.set(0, 0, 280);
+
+// Fog
+scene.fog = new THREE.FogExp2(0x040d1a, 0.0018);
+
+// Ambient + directional light
+scene.add(new THREE.AmbientLight(0x1a2a4a, 1.5));
+const dLight = new THREE.DirectionalLight(0x60a5fa, 1.2);
+dLight.position.set(100, 150, 100);
+scene.add(dLight);
+const dLight2 = new THREE.DirectionalLight(0x06b6d4, 0.6);
+dLight2.position.set(-100, -80, -100);
+scene.add(dLight2);
+
+// Background stars
+(()=>{
+  const geo = new THREE.BufferGeometry();
+  const n = 1400;
+  const pos = new Float32Array(n*3);
+  for(let i=0;i<n*3;i++) pos[i]=(Math.random()-.5)*1200;
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({color:0x8bafd4,size:.6,transparent:true,opacity:.45});
+  scene.add(new THREE.Points(geo, mat));
+})();
+
+// ── Colors from community ──
+const COM_COLOR = {};
+COMMUNITIES.forEach(c=>COM_COLOR[c.id]=c.color);
+
+// ── Build adjacency map ──
+const adjMap = {};
+NODES.forEach(n=>adjMap[n.id]=[]);
+EDGES.forEach(([a,b])=>{ adjMap[a].push(b); adjMap[b].push(a); });
+
+// Compute degree
+const degreeMap = {};
+NODES.forEach(n=>degreeMap[n.id]=adjMap[n.id].length);
+
+// ── 3D positions (force-like layout using random + spread by community) ──
+const positions = {};
+const comCenters = [
+  new THREE.Vector3(-80, 60, 20),   // 0 Orchestration
+  new THREE.Vector3(60, 80, -40),   // 1 Frontend
+  new THREE.Vector3(-60, -60, -60), // 2 Agents IA
+  new THREE.Vector3(80, -40, 60),   // 3 Supabase
+  new THREE.Vector3(0, -90, 80),    // 4 Intégrations
+  new THREE.Vector3(-80, 20, -90),  // 5 Blog & SEO
+  new THREE.Vector3(100, 30, 90),   // 6 DevOps
+];
+
+NODES.forEach(n=>{
+  const c = comCenters[n.community];
+  positions[n.id] = new THREE.Vector3(
+    c.x + (Math.random()-.5)*55,
+    c.y + (Math.random()-.5)*55,
+    c.z + (Math.random()-.5)*55
+  );
+});
+
+// ── Simple force iterations ──
+function runForce(iterations=80){
+  for(let it=0;it<iterations;it++){
+    const F = {};
+    NODES.forEach(n=>F[n.id]=new THREE.Vector3());
+
+    // Repulsion
+    for(let i=0;i<NODES.length;i++){
+      for(let j=i+1;j<NODES.length;j++){
+        const a=NODES[i].id, b=NODES[j].id;
+        const diff=new THREE.Vector3().subVectors(positions[a],positions[b]);
+        const d=Math.max(diff.length(),1);
+        const force=1200/(d*d);
+        const dir=diff.normalize();
+        F[a].addScaledVector(dir, force);
+        F[b].addScaledVector(dir, -force);
+      }
+    }
+    // Attraction (edges)
+    EDGES.forEach(([a,b])=>{
+      const diff=new THREE.Vector3().subVectors(positions[b],positions[a]);
+      const d=diff.length();
+      const force=(d-40)*0.015;
+      const dir=diff.normalize();
+      F[a].addScaledVector(dir, force);
+      F[b].addScaledVector(dir, -force);
+    });
+    // Community center pull
+    NODES.forEach(n=>{
+      const c=comCenters[n.community];
+      const diff=new THREE.Vector3().subVectors(c,positions[n.id]);
+      F[n.id].addScaledVector(diff, 0.03);
+    });
+
+    const alpha = 1 - it/iterations;
+    NODES.forEach(n=>{
+      positions[n.id].addScaledVector(F[n.id], 0.08*alpha);
+    });
+  }
+}
+runForce(100);
+
+// ── Meshes ──
+const nodeMeshes = {};
+const nodeById = {};
+NODES.forEach(n=>nodeById[n.id]=n);
+
+const sphereGeo = (r)=>new THREE.SphereGeometry(r,16,12);
+
+NODES.forEach(n=>{
+  const deg = degreeMap[n.id];
+  const r = 2.5 + Math.sqrt(deg)*1.4;
+  const color = new THREE.Color(COM_COLOR[n.community]);
+  const mat = new THREE.MeshPhongMaterial({
+    color, emissive:color, emissiveIntensity:.25,
+    transparent:true, opacity:.92,
+    shininess:80
+  });
+  const mesh = new THREE.Mesh(sphereGeo(r), mat);
+  mesh.position.copy(positions[n.id]);
+  mesh.userData = { id:n.id, r };
+  scene.add(mesh);
+  nodeMeshes[n.id] = mesh;
+});
+
+// ── Edges (lines) ──
+const edgeLines = [];
+const edgeMat = new THREE.LineBasicMaterial({color:0x2a4a7a,transparent:true,opacity:.35});
+
+EDGES.forEach(([a,b])=>{
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    positions[a].clone(), positions[b].clone()
+  ]);
+  const line = new THREE.Line(geo, edgeMat.clone());
+  scene.add(line);
+  edgeLines.push({line, a, b});
+});
+
+// ── Labels (sprites) ──
+let showLabels = true;
+const labelSprites = {};
+
+function makeLabel(text, color){
+  const canvas2 = document.createElement('canvas');
+  canvas2.width = 256; canvas2.height = 48;
+  const ctx = canvas2.getContext('2d');
+  ctx.clearRect(0,0,256,48);
+  ctx.font = 'bold 18px Segoe UI, sans-serif';
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,.8)';
+  ctx.shadowBlur = 6;
+  ctx.fillText(text, 4, 32);
+  const tex = new THREE.CanvasTexture(canvas2);
+  const mat = new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:false});
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(28, 5.5, 1);
+  return sprite;
+}
+
+NODES.forEach(n=>{
+  if(degreeMap[n.id] >= 4){
+    const spr = makeLabel(n.label, COM_COLOR[n.community]);
+    spr.position.copy(positions[n.id]);
+    spr.position.y += (2.5 + Math.sqrt(degreeMap[n.id])*1.4) + 5;
+    scene.add(spr);
+    labelSprites[n.id] = spr;
+  }
+});
+
+// ── Glow particles on high-degree nodes ──
+NODES.filter(n=>degreeMap[n.id]>=6).forEach(n=>{
+  const color = new THREE.Color(COM_COLOR[n.community]);
+  const geoP = new THREE.SphereGeometry(degreeMap[n.id]*.8+4,8,6);
+  const matP = new THREE.MeshBasicMaterial({color, transparent:true, opacity:.06, side:THREE.BackSide});
+  const glow = new THREE.Mesh(geoP, matP);
+  glow.position.copy(positions[n.id]);
+  scene.add(glow);
+});
+
+// ═══════════════════════════════════════════════════════
+//  CONTROLS — ORBIT
+// ═══════════════════════════════════════════════════════
+
+let isDragging=false, isShift=false;
+let mouseX=0, mouseY=0;
+let camTheta=0, camPhi=Math.PI/3, camR=280;
+let targetX=0, targetY=0, targetZ=0;
+let camTarget = new THREE.Vector3();
+
+function updateCamera(){
+  camera.position.set(
+    camTarget.x + camR*Math.sin(camPhi)*Math.sin(camTheta),
+    camTarget.y + camR*Math.cos(camPhi),
+    camTarget.z + camR*Math.sin(camPhi)*Math.cos(camTheta)
+  );
+  camera.lookAt(camTarget);
+}
+updateCamera();
+
+canvas.addEventListener('mousedown',e=>{ isDragging=true; mouseX=e.clientX; mouseY=e.clientY; isShift=e.shiftKey; });
+window.addEventListener('mouseup',()=>isDragging=false);
+window.addEventListener('mousemove',e=>{
+  if(!isDragging) return;
+  const dx=e.clientX-mouseX, dy=e.clientY-mouseY;
+  mouseX=e.clientX; mouseY=e.clientY;
+  if(isShift){
+    const right=new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    camTarget.addScaledVector(right, -dx*.25);
+    camTarget.y += dy*.25;
+  } else {
+    camTheta -= dx*.005;
+    camPhi = Math.max(.15, Math.min(Math.PI-.15, camPhi + dy*.005));
+  }
+  updateCamera();
+});
+canvas.addEventListener('wheel',e=>{ camR=Math.max(60,Math.min(600,camR+e.deltaY*.25)); updateCamera(); },{passive:true});
+
+function resetCamera(){ camTheta=0;camPhi=Math.PI/3;camR=280;camTarget.set(0,0,0);updateCamera(); }
+
+// ── Double-click to center ──
+canvas.addEventListener('dblclick',e=>{
+  const hit = raycast(e.clientX, e.clientY);
+  if(hit){ camTarget.copy(positions[hit]); camR=120; updateCamera(); }
+});
+
+// ═══════════════════════════════════════════════════════
+//  RAYCASTING
+// ═══════════════════════════════════════════════════════
+
+const raycaster = new THREE.Raycaster();
+const mouse2D = new THREE.Vector2();
+
+function raycast(cx, cy){
+  mouse2D.set((cx/W())*2-1, -(cy/H())*2+1);
+  raycaster.setFromCamera(mouse2D, camera);
+  const meshes = Object.values(nodeMeshes);
+  const hits = raycaster.intersectObjects(meshes);
+  return hits.length ? hits[0].object.userData.id : null;
+}
+
+// ── Hover / tooltip ──
+let hoveredId = null;
+const tooltip = document.getElementById('tooltip');
+
+window.addEventListener('mousemove', e=>{
+  const id = raycast(e.clientX, e.clientY);
+  if(id !== hoveredId){
+    if(hoveredId) nodeMeshes[hoveredId].material.emissiveIntensity = .25;
+    hoveredId = id;
+    if(id){ nodeMeshes[id].material.emissiveIntensity = .7; canvas.style.cursor='pointer'; }
+    else canvas.style.cursor='grab';
+  }
+  if(id){
+    const n=nodeById[id];
+    tooltip.innerHTML=`<strong style="color:${COM_COLOR[n.community]}">${n.label}</strong><br>${n.desc}<br><span style="opacity:.5;font-size:10px">${COMMUNITIES[n.community].name} · ${degreeMap[id]} connexions</span>`;
+    tooltip.style.display='block';
+    tooltip.style.left=(e.clientX+14)+'px';
+    tooltip.style.top=(e.clientY-10)+'px';
+  } else tooltip.style.display='none';
+});
+
+// ── Click to inspect ──
+canvas.addEventListener('click',e=>{
+  if(Math.abs(e.movementX)+Math.abs(e.movementY)>4) return;
+  const id = raycast(e.clientX, e.clientY);
+  if(id) showInspect(id);
+  else hideInspect();
+});
+
+function showInspect(id){
+  const n=nodeById[id];
+  document.getElementById('inspect-name').textContent = n.label;
+  document.getElementById('inspect-comm').innerHTML = `<span class="badge" style="color:${COM_COLOR[n.community]};border-color:${COM_COLOR[n.community]}33">${COMMUNITIES[n.community].name}</span>`;
+  document.getElementById('inspect-meta-block').innerHTML =
+    `<span>Rôle :</span> ${n.role} &nbsp;·&nbsp; <span>Statut :</span> ${n.status} &nbsp;·&nbsp; <span>Connexions :</span> ${degreeMap[id]}<br>${n.desc}`;
+  const nbList = document.getElementById('nb-list');
+  nbList.innerHTML = '';
+  adjMap[id].forEach(nid=>{
+    const nb=nodeById[nid];
+    const el=document.createElement('div');
+    el.className='nb-item';
+    el.style.borderLeftColor=COM_COLOR[nb.community];
+    el.textContent=nb.label;
+    el.onclick=()=>showInspect(nid);
+    nbList.appendChild(el);
+  });
+  document.getElementById('inspect').classList.add('show');
+  document.getElementById('inspect-card').style.display='block';
+  // Highlight
+  Object.values(nodeMeshes).forEach(m=>{ m.material.opacity=.22; });
+  nodeMeshes[id].material.opacity=1;
+  adjMap[id].forEach(nid=>{ nodeMeshes[nid].material.opacity=.85; });
+  edgeLines.forEach(({line,a,b})=>{
+    line.material.opacity = (a===id||b===id)?0.9:0.07;
+  });
+}
+
+function hideInspect(){
+  document.getElementById('inspect').classList.remove('show');
+  document.getElementById('inspect-card').style.display='none';
+  Object.values(nodeMeshes).forEach(m=>{ m.material.opacity=.92; });
+  edgeLines.forEach(({line})=>line.material.opacity=.35);
+}
+
+document.getElementById('inspect-close').onclick = hideInspect;
+
+// ═══════════════════════════════════════════════════════
+//  SEARCH & FILTER
+// ═══════════════════════════════════════════════════════
+
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+searchInput.addEventListener('input',()=>{
+  const q=searchInput.value.toLowerCase().trim();
+  searchResults.innerHTML='';
+  if(!q) return;
+  NODES.filter(n=>n.label.toLowerCase().includes(q)||n.desc.toLowerCase().includes(q)).slice(0,8).forEach(n=>{
+    const el=document.createElement('div');
+    el.className='sr-item';
+    el.innerHTML=`<span class="sr-dot" style="background:${COM_COLOR[n.community]}"></span>${n.label}`;
+    el.onclick=()=>{ showInspect(n.id); camTarget.copy(positions[n.id]); updateCamera(); searchResults.innerHTML=''; searchInput.value=''; };
+    searchResults.appendChild(el);
+  });
+});
+
+// ── Community filter ──
+let activeFilters = new Set();
+const filterRow = document.getElementById('filter-row');
+
+COMMUNITIES.forEach(c=>{
+  const btn=document.createElement('button');
+  btn.className='fbtn';
+  btn.textContent=c.name.split(' ')[0];
+  btn.title=c.name;
+  btn.onclick=()=>{
+    if(activeFilters.has(c.id)){ activeFilters.delete(c.id); btn.classList.remove('on'); }
+    else { activeFilters.add(c.id); btn.classList.add('on'); }
+    applyFilter();
+  };
+  filterRow.appendChild(btn);
+});
+
+document.getElementById('filter-all-btn').onclick=()=>{
+  activeFilters.clear();
+  filterRow.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on'));
+  applyFilter();
+};
+
+function applyFilter(){
+  const showAll = activeFilters.size===0;
+  NODES.forEach(n=>{
+    const show = showAll || activeFilters.has(n.community);
+    nodeMeshes[n.id].visible = show;
+    if(labelSprites[n.id]) labelSprites[n.id].visible = show && showLabels;
+  });
+  edgeLines.forEach(({line,a,b})=>{
+    const show = showAll || (activeFilters.has(nodeById[a].community) || activeFilters.has(nodeById[b].community));
+    line.visible = show;
+  });
+}
+
+// ── Legend ──
+const legendList = document.getElementById('legend-list');
+COMMUNITIES.forEach(c=>{
+  const count = NODES.filter(n=>n.community===c.id).length;
+  const el=document.createElement('div');
+  el.className='leg-item';
+  el.innerHTML=`<span class="leg-dot" style="background:${c.color};color:${c.color}"></span><span>${c.name}</span><span class="leg-cnt">${count}</span>`;
+  el.onclick=()=>{
+    el.classList.toggle('active-com');
+    if(el.classList.contains('active-com')){ activeFilters.add(c.id); } else { activeFilters.delete(c.id); }
+    filterRow.querySelectorAll('.fbtn').forEach((b,i)=>{ if(i===c.id) b.classList.toggle('on', activeFilters.has(c.id)); });
+    applyFilter();
+  };
+  legendList.appendChild(el);
+});
+
+// ═══════════════════════════════════════════════════════
+//  ADMIN PANEL
+// ═══════════════════════════════════════════════════════
+
+const ADMIN_CODE = 'holiswiss2026';
+
+document.getElementById('admin-toggle').onclick=()=>{
+  document.getElementById('admin-panel').classList.toggle('open');
+  document.getElementById('admin-toggle').classList.toggle('active');
+};
+document.getElementById('ap-close-btn').onclick=()=>{
+  document.getElementById('admin-panel').classList.remove('open');
+  document.getElementById('admin-toggle').classList.remove('active');
+};
+document.getElementById('admin-login-btn').onclick=()=>{
+  if(document.getElementById('admin-pwd').value===ADMIN_CODE){
+    document.getElementById('admin-login').style.display='none';
+    document.getElementById('admin-content').classList.add('show');
+    fillAdminStats();
+  } else {
+    document.getElementById('login-err').style.display='block';
+  }
+};
+document.getElementById('admin-pwd').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('admin-login-btn').click(); });
+
+function fillAdminStats(){
+  const n=NODES.length, e=EDGES.length;
+  document.getElementById('ap-nodes').textContent=n;
+  document.getElementById('ap-edges').textContent=e;
+  document.getElementById('ap-coms').textContent=COMMUNITIES.length;
+  document.getElementById('ap-density').textContent=((2*e)/(n*(n-1))).toFixed(3);
+  document.getElementById('st-nodes').textContent=n;
+  document.getElementById('st-edges').textContent=e;
+  document.getElementById('st-coms').textContent=COMMUNITIES.length;
+
+  // Top hubs
+  const sorted=[...NODES].sort((a,b)=>degreeMap[b.id]-degreeMap[a.id]).slice(0,8);
+  const hubList=document.getElementById('hub-list');
+  hubList.innerHTML='';
+  sorted.forEach((n,i)=>{
+    const el=document.createElement('div');
+    el.className='hub-item';
+    el.innerHTML=`<span class="hub-rank">${i+1}</span><span class="hub-dot" style="background:${COM_COLOR[n.community]}"></span><span class="hub-name">${n.label}</span><span class="hub-deg">${degreeMap[n.id]}</span>`;
+    el.onclick=()=>{ showInspect(n.id); camTarget.copy(positions[n.id]); updateCamera(); };
+    hubList.appendChild(el);
+  });
+}
+
+// Init stats visible in header
+document.getElementById('st-nodes').textContent=NODES.length;
+document.getElementById('st-edges').textContent=EDGES.length;
+document.getElementById('st-coms').textContent=COMMUNITIES.length;
+
+// ═══════════════════════════════════════════════════════
+//  EXTRA ACTIONS
+// ═══════════════════════════════════════════════════════
+
+function toggleLabels(){
+  showLabels=!showLabels;
+  Object.values(labelSprites).forEach(s=>s.visible=showLabels);
+}
+
+function explodeGraph(){
+  NODES.forEach(n=>{
+    const mesh=nodeMeshes[n.id];
+    mesh.position.addScaledVector(
+      new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).normalize(),
+      60
+    );
+  });
+}
+
+function resetSimulation(){
+  NODES.forEach(n=>{
+    const c=comCenters[n.community];
+    positions[n.id].set(c.x+(Math.random()-.5)*55,c.y+(Math.random()-.5)*55,c.z+(Math.random()-.5)*55);
+    nodeMeshes[n.id].position.copy(positions[n.id]);
+  });
+  runForce(80);
+  NODES.forEach(n=>nodeMeshes[n.id].position.copy(positions[n.id]));
+  updateEdges();
+  if(showLabels) NODES.forEach(n=>{ if(labelSprites[n.id]){ labelSprites[n.id].position.copy(positions[n.id]); labelSprites[n.id].position.y+=(2.5+Math.sqrt(degreeMap[n.id])*1.4)+5; } });
+}
+
+function updateEdges(){
+  edgeLines.forEach(({line,a,b})=>{
+    const pts=[positions[a].clone(), positions[b].clone()];
+    line.geometry.setFromPoints(pts);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════
+
+window.addEventListener('resize',()=>{
+  camera.aspect=W()/H();
+  camera.updateProjectionMatrix();
+  renderer.setSize(W(),H());
+});
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════════
+
+let time=0;
+function animate(){
+  requestAnimationFrame(animate);
+  time+=.008;
+
+  // Gentle bob on nodes
+  NODES.forEach(n=>{
+    const m=nodeMeshes[n.id];
+    const base=positions[n.id];
+    m.position.y = base.y + Math.sin(time + n.community*.9)*0.6;
+    if(labelSprites[n.id]){
+      labelSprites[n.id].position.y = m.position.y + (2.5+Math.sqrt(degreeMap[n.id])*1.4)+5;
+    }
+  });
+
+  // Update edge endpoints
+  edgeLines.forEach(({line,a,b})=>{
+    const pts=[nodeMeshes[a].position.clone(), nodeMeshes[b].position.clone()];
+    line.geometry.setFromPoints(pts);
+  });
+
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════
+//  LOADER
+// ═══════════════════════════════════════════════════════
+
+const msgs = ['Chargement Three.js…','Construction du graphe…','Calcul des positions…','Rendu des nœuds…','Tracé des liens…','Prêt !'];
+let pct=0;
+const bar=document.getElementById('ld-bar');
+const lmsg=document.getElementById('ld-msg');
+
+function loadStep(i){
+  pct=Math.min(100,Math.round((i/msgs.length)*100));
+  bar.style.width=pct+'%';
+  lmsg.textContent=msgs[i]||msgs[msgs.length-1];
+  if(i<msgs.length-1) setTimeout(()=>loadStep(i+1), 200);
+  else {
+    setTimeout(()=>{
+      document.getElementById('loader').classList.add('hidden');
+      animate();
+    }, 400);
+  }
+}
+loadStep(0);
+
+</script>
+</body>
+</html>
